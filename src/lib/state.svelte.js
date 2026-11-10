@@ -1,10 +1,13 @@
 // App state. Components read `app` and `sheet` directly; anything derived updates by itself.
+import { untrack } from 'svelte';
 import { instrumentById, parseTuning } from './music/instruments.js';
 import { buildTones, chordById, chordName, identifyChord, mod12, noteName, scaleById } from './music/theory.js';
 import { findVoicings } from './music/voicings.js';
 
 const PREFS_KEY = 'fretboard:prefs';
-const SHEET_KEY = 'fretboard:sheet';
+const SHEET_KEY = 'fretboard:sheet'; // old single sheet, migrated into the song library
+const SONGS_KEY = 'fretboard:songs';
+const CURRENT_KEY = 'fretboard:current';
 const RECENT_KEY = 'fretboard:recent';
 
 function load(key, fallback) {
@@ -166,7 +169,102 @@ class AppState {
 
 export const app = new AppState();
 
-export const sheet = $state(load(SHEET_KEY, { title: 'My song', cols: 4, labels: 'none', items: [] }));
+// ---- Songs ---------------------------------------------------------------
+// `songs` is the saved library. `sheet` is the open song: edits to it are copied
+// into the library automatically, so there is no Save button to forget.
+
+const blankSong = () => ({ id: crypto.randomUUID(), title: 'My song', cols: 4, labels: 'none', items: [], updated: Date.now() });
+
+function initialSongs() {
+  const stored = load(SONGS_KEY, null);
+  if (Array.isArray(stored)) return stored;
+  const old = load(SHEET_KEY, null); // from before the library existed
+  return old?.items?.length ? [{ ...blankSong(), ...old, id: crypto.randomUUID() }] : [];
+}
+
+export const songs = $state(initialSongs());
+const startId = load(CURRENT_KEY, null);
+export const sheet = $state(structuredClone($state.snapshot(songs.find((s) => s.id === startId) ?? songs[0] ?? blankSong())));
+
+/** Songs worth keeping: anything with chords or a title of its own. */
+const worthSaving = (s) => s.items.length > 0 || (s.title.trim() && s.title !== 'My song');
+
+export function openSong(id) {
+  const song = songs.find((s) => s.id === id);
+  if (song) Object.assign(sheet, structuredClone($state.snapshot(song)));
+}
+
+export function newSong() {
+  Object.assign(sheet, blankSong());
+}
+
+export function duplicateSong(id) {
+  const song = songs.find((s) => s.id === id);
+  if (!song) return;
+  const copy = { ...structuredClone($state.snapshot(song)), id: crypto.randomUUID(), title: song.title + ' (copy)', updated: Date.now() };
+  songs.unshift(copy);
+  openSong(copy.id);
+}
+
+export function deleteSong(id) {
+  const i = songs.findIndex((s) => s.id === id);
+  if (i >= 0) songs.splice(i, 1);
+  if (sheet.id !== id) return;
+  const latest = songs.reduce((a, b) => (b.updated > (a?.updated ?? -1) ? b : a), null);
+  latest ? openSong(latest.id) : newSong();
+}
+
+// ---- Song files -----------------------------------------------------------
+// A .json file holding one or more songs: for backups, moving to another device, or sharing.
+
+const FILE_FORMAT = 'fretboard-songs';
+
+export function songsFile(list) {
+  const clean = list.map(({ id, updated, ...song }) => song);
+  return JSON.stringify({ format: FILE_FORMAT, version: 1, songs: clean }, null, 1);
+}
+
+const isInt = (v) => Number.isInteger(v);
+
+function cleanItem(item) {
+  if (!item || !Array.isArray(item.frets) || !Array.isArray(item.tuning)) return null;
+  if (item.frets.length !== item.tuning.length || item.frets.length < 1 || item.frets.length > 12) return null;
+  if (!item.frets.every((f) => isInt(f) && f >= -1 && f <= 24) || !item.tuning.every((m) => isInt(m) && m >= 0 && m <= 127)) return null;
+  if (!isInt(item.root)) return null;
+  return {
+    id: crypto.randomUUID(),
+    root: mod12(item.root),
+    chordId: chordById(item.chordId).id,
+    bass: isInt(item.bass) ? mod12(item.bass) : null,
+    frets: item.frets,
+    tuning: item.tuning,
+    instrument: instrumentById(item.instrument).id,
+  };
+}
+
+/** Reads a songs file, adds its songs to the library and opens the first one. Returns how many were added. */
+export function importSongs(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('This file isn’t a song file (it isn’t valid JSON).');
+  }
+  if (data?.format !== FILE_FORMAT || !Array.isArray(data.songs)) throw new Error('This file isn’t a Fretboard song file.');
+  const now = Date.now();
+  const added = data.songs.map((s, i) => ({
+    ...blankSong(),
+    updated: now - i, // keeps the file's order in the newest-first list
+    title: typeof s?.title === 'string' ? s.title.slice(0, 200) : 'Imported song',
+    cols: [2, 3, 4, 5, 6, 8].includes(s?.cols) ? s.cols : 4,
+    labels: ['none', 'notes', 'intervals'].includes(s?.labels) ? s.labels : 'none',
+    items: (Array.isArray(s?.items) ? s.items : []).map(cleanItem).filter(Boolean),
+  }));
+  if (!added.length) throw new Error('No songs found in this file.');
+  songs.unshift(...added);
+  openSong(added[0].id);
+  return added.length;
+}
 
 /** `match` comes from identifyChord; without it the selected chord is used. */
 export function addToSheet(frets, match = null) {
@@ -189,7 +287,20 @@ $effect.root(() => {
     save(PREFS_KEY, prefs);
     history.replaceState(null, '', toHash(prefs));
   });
-  $effect(() => save(SHEET_KEY, $state.snapshot(sheet)));
+  // Copy the open song into the library whenever it changes.
+  $effect(() => {
+    const snap = $state.snapshot(sheet);
+    save(CURRENT_KEY, snap.id);
+    untrack(() => {
+      const i = songs.findIndex((s) => s.id === snap.id);
+      if (i < 0) {
+        if (worthSaving(snap)) songs.unshift({ ...snap, updated: Date.now() });
+      } else if (JSON.stringify({ ...songs[i], updated: 0 }) !== JSON.stringify({ ...snap, updated: 0 })) {
+        songs[i] = { ...snap, updated: Date.now() };
+      }
+    });
+  });
+  $effect(() => save(SONGS_KEY, $state.snapshot(songs)));
   $effect(() => save(RECENT_KEY, $state.snapshot(app.recent)));
 });
 

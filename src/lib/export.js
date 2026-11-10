@@ -33,6 +33,7 @@ function download(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+export const downloadJson = (text, filename) => download(new Blob([text], { type: 'application/json' }), filename);
 export const downloadSvg = (svg, filename) => download(new Blob([svg], { type: 'image/svg+xml' }), filename);
 
 export function downloadPng(svg, width, height, filename, scale = 2) {
