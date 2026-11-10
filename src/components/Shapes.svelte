@@ -1,7 +1,7 @@
 <script>
   import { app, addToSheet } from '../lib/state.svelte.js';
   import { chordDiagram, SCREEN_PALETTE, svgDocument } from '../lib/diagram.js';
-  import { chordName, intervalLabel, mod12, noteName } from '../lib/music/theory.js';
+  import { chordName, noteName } from '../lib/music/theory.js';
   import { play } from '../lib/audio.js';
 
   const POSITIONS = [
@@ -19,15 +19,14 @@
     app.voicings.map((v, index) => {
       const sounding = v.frets.flatMap((f, s) => (f < 0 ? [] : [{ f, midi: app.tuning[s] + f }]));
       const fretted = sounding.filter((x) => x.f > 0).map((x) => x.f);
-      const bassPc = mod12(Math.min(...sounding.map((x) => x.midi)));
-      return { ...v, index, opens: sounding.some((x) => x.f === 0), minF: fretted.length ? Math.min(...fretted) : 0, bass: app.tones.find((t) => t.pc === bassPc)?.name };
+      return { ...v, index, opens: sounding.some((x) => x.f === 0), minF: fretted.length ? Math.min(...fretted) : 0 };
     }),
   );
 
   let visible = $derived(
     shapes.filter((v) => {
       const pos = POSITIONS.find((p) => p.id === app.filters.position);
-      return (!pos?.test || pos.test(v)) && (app.filters.bass === 'any' || v.bass === app.filters.bass);
+      return !pos?.test || pos.test(v);
     }),
   );
 
@@ -47,7 +46,7 @@
 
 <section class="card shapes">
   <div class="filters">
-    <h3>Chord shapes <small>{visible.length} of {shapes.length}</small></h3>
+    <h3>Chord shapes <small class="count">{visible.length} of {shapes.length}</small></h3>
 
     <div class="group" aria-label="Strings to use">
       <span class="lbl">Strings</span>
@@ -65,14 +64,6 @@
       <span class="lbl">Position</span>
       {#each POSITIONS as p}
         <button class="chip small" class:active={app.filters.position === p.id} onclick={() => setFilter('position', p.id)}>{p.label}</button>
-      {/each}
-    </div>
-
-    <div class="group" aria-label="Bass note">
-      <span class="lbl">Bass</span>
-      <button class="chip small" class:active={app.filters.bass === 'any'} onclick={() => setFilter('bass', 'any')}>Any</button>
-      {#each app.tones as t}
-        <button class="chip small" class:active={app.filters.bass === t.name} onclick={() => setFilter('bass', t.name)}>{intervalLabel(t.name)}</button>
       {/each}
     </div>
   </div>
@@ -96,7 +87,8 @@
 <style>
   .filters { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 10px; }
   h3 { margin: 0; font-size: 16px; }
-  h3 small { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 4px; }
+  /* Fixed width so the filters next to it don't jump when the number changes. */
+  .count { display: inline-block; width: 8ch; font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .lbl { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 2px; }
   .string:not(.active) { text-decoration: line-through; color: var(--muted); }

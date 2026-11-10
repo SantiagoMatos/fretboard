@@ -17,13 +17,13 @@ Node is installed in `~/.local/node` and linked into `~/.local/bin`, so `npm` wo
 ## Features
 
 - **Chords**: 20 chord types from any root, with every playable shape found automatically (tap to hear and highlight it)
-- **Shape tools**: switch strings off (e.g. only the top 4), filter by neck position and bass note, and edit a shape by tapping the board — the chord name follows your edits
+- **Shape tools**: switch strings off (e.g. only the top 4), filter by neck position, and edit a shape by tapping the board — the chord name follows your edits
 - **Scales**: 15 scales, plus the triads and 7th chords that belong to each 7-note scale
 - **Identify**: tap frets on the board and get the chord name (including slash chords)
 - **Song sheet**: slide-in panel to collect chord diagrams, reorder them, export as PNG / SVG or print
 - **Songs library**: every song saves automatically in the browser; open, duplicate or delete them from “☰ Songs”
 - **Song files**: “Save file” downloads one song as `.json`, “Back up all” downloads every song; “Open file…” loads them back (other devices, sharing)
-- Notes / intervals / no labels, C♯ / D♭ / Do-Re-Mi names, show/hide single intervals
+- Notes / intervals / no labels, D♭ (default) / C♯ / Do-Re-Mi names, show/hide single intervals
 - Custom tunings, left-handed mode, flipped strings, 12–22 frets
 - Full-width fretboard that stays in view while scrolling; vertical neck on phones
 - Sound (Web Audio, no samples), dark mode
@@ -42,10 +42,10 @@ src/
   lib/state.svelte.js       app state, songs library, song files, saving, URL hash
   components/
     TopBar.svelte           instrument, tuning, mode, display settings, sheet button
-    Picker.svelte           root, chord/scale type, interval toggles
+    Picker.svelte           piano-style root picker, chord/scale columns by family (tabs on phones), interval toggles
     Board.svelte            fretboard card: markers, play, add, shape editing
     Fretboard.svelte        the SVG neck (horizontal, or vertical on narrow screens)
-    Shapes.svelte           chord-shape strip with string/position/bass filters
+    Shapes.svelte           chord-shape strip with string and position filters
     SidePanel.svelte        scale chords and identify results
     SongSheet.svelte        slide-in song sheet, songs list, export
 ```

@@ -28,7 +28,7 @@ function save(key, value) {
 
 const DEFAULTS = {
   instrument: 'timple', tuningIndex: 0, customTuning: '', mode: 'chord', root: 0, chordId: 'maj', scaleId: 'major',
-  labels: 'notes', notation: 'sharp', frets: 12, lefty: false, flip: false,
+  labels: 'notes', notation: 'flat', frets: 12, lefty: false, flip: false,
 };
 
 // Shareable part of the state lives in the URL hash: #i=guitar&m=chord&r=0&c=maj
@@ -54,13 +54,20 @@ function toHash(prefs) {
   return '#' + p.toString();
 }
 
+// Saved settings from before flats became the default switch to flats once (v2).
+function loadPrefs() {
+  const saved = load(PREFS_KEY, {});
+  if (!saved.v && saved.notation === 'sharp') delete saved.notation;
+  return { ...saved, v: 2 };
+}
+
 class AppState {
-  prefs = $state({ ...DEFAULTS, ...load(PREFS_KEY, {}), ...fromHash() });
+  prefs = $state({ ...DEFAULTS, ...loadPrefs(), ...fromHash() });
   hidden = $state([]); // interval names switched off
   voicingIndex = $state(null); // shape picked from the list (null once edited)
   shape = $state(null); // frets per string being shown/edited on the board, -1 = muted
   off = $state([]); // string indexes switched off for the shape finder
-  filters = $state({ position: 'all', bass: 'any' });
+  filters = $state({ position: 'all' });
   sheetOpen = $state(false);
   picked = $state([]); // identify mode: fret per string, or null
   recent = $state(load(RECENT_KEY, []));
@@ -110,10 +117,7 @@ class AppState {
       this.off = [];
     }
     if (changed('instrument', 'tuningIndex', 'customTuning', 'root', 'chordId', 'mode', 'frets')) this.clearShape();
-    if (changed('chordId', 'scaleId', 'mode')) {
-      this.hidden = [];
-      this.filters.bass = 'any'; // the old bass interval may not exist in the new chord
-    }
+    if (changed('chordId', 'scaleId', 'mode')) this.hidden = [];
     const chordChanged = changed('root', 'chordId', 'mode');
     Object.assign(p, patch);
     if (chordChanged && p.mode === 'chord') {

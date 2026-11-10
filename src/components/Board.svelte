@@ -90,6 +90,20 @@
 <section class="card board">
   <div class="head">
     <h2>{app.title}</h2>
+    {#if app.prefs.mode !== 'identify'}
+      <div class="intervals" role="group" aria-label="Show or hide notes">
+        {#each app.tones as t}
+          <button
+            class="iv {intervalClass(t.semi)}"
+            class:off={app.hidden.includes(t.name)}
+            title="{app.hidden.includes(t.name) ? 'Show' : 'Hide'} {intervalLabel(t.name)} on the board"
+            onclick={() => app.toggleInterval(t.name)}
+          >
+            <b>{intervalLabel(t.name)}</b><span>{noteName(t.pc, app.prefs.notation)}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
     {#if edited}<span class="tag" title="Your edited shape">Edited · {shapeName}</span>{/if}
     {#if chordMode && app.shape}<span class="hint">Tap the board to move a string, tap again to mute it</span>{/if}
     <span class="spacer"></span>
@@ -116,6 +130,15 @@
 <style>
   .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
   h2 { margin: 0; font-size: 19px; }
+  .intervals { display: flex; gap: 4px; flex-wrap: wrap; }
+  .iv { display: grid; justify-items: center; border: 0; border-radius: 8px; padding: 3px 9px; color: #fff; background: var(--iv-x); line-height: 1.1; }
+  .iv b { font-size: 13px; }
+  .iv span { font-size: 10px; opacity: 0.85; }
+  .iv.iv-root { background: var(--iv-root); }
+  .iv.iv-3 { background: var(--iv-3); }
+  .iv.iv-5 { background: var(--iv-5); }
+  .iv.iv-7 { background: var(--iv-7); }
+  .iv.off { opacity: 0.25; }
   .tag { background: var(--hover); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; }
   .spacer { flex: 1; }
   .actions { display: flex; gap: 6px; flex-wrap: wrap; }
