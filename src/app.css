@@ -1,0 +1,88 @@
+:root {
+  --bg: #f2f2f5;
+  --card: #ffffff;
+  --fg: #1d1d1f;
+  --muted: #6e6e73;
+  --border: #d8d8dd;
+  --hover: rgba(47, 111, 222, 0.08);
+  --accent: #2f6fde;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --fret: #b9b9c0;
+  --string: #8c8c94;
+  --inlay: #e7e7ec;
+  /* Interval colours: root, 3rds, 5ths, 6ths/7ths, everything else */
+  --iv-root: #e0482a;
+  --iv-3: #2f6fde;
+  --iv-5: #1f9d6b;
+  --iv-7: #8a4fd8;
+  --iv-x: #7c7c86;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111113;
+    --card: #1c1c1f;
+    --fg: #f2f2f5;
+    --muted: #9c9ca5;
+    --border: #3a3a40;
+    --hover: rgba(120, 160, 255, 0.12);
+    --accent: #5b8ff0;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --fret: #55555c;
+    --string: #8a8a92;
+    --inlay: #2a2a2f;
+    --iv-root: #f0603f;
+    --iv-3: #4a84ee;
+    --iv-5: #2bb07c;
+    --iv-7: #9c67e6;
+    --iv-x: #6c6c76;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.card { background: var(--card); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); }
+
+button, select, input {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+select, input {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.chip { border-radius: 999px; padding: 5px 13px; }
+.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.small { padding: 3px 10px; font-size: 13px; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+
+/* Printing shows only the song sheet. */
+@media print {
+  body { background: #fff; }
+  main > :not(.sheet) { display: none !important; }
+  .sheet { box-shadow: none !important; padding: 0 !important; }
+}

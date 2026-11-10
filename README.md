@@ -1,0 +1,50 @@
+# Fretboard
+
+Chords, scales and printable chord charts for timple, guitar, ukulele, bass, mandolin, bandurria/laúd and cavaquinho.
+
+Built with [Svelte 5](https://svelte.dev) + [Vite](https://vite.dev), plain JavaScript, no other dependencies.
+
+## Run it
+
+```bash
+npm install        # first time only
+npm run dev        # dev server with live reload → http://localhost:5173
+npm run build      # production files in dist/ — upload that folder anywhere (GitHub Pages, Netlify…)
+```
+
+Node is installed in `~/.local/node`. To use `npm` from any terminal, add this line to `~/.bashrc`:
+
+```bash
+export PATH="$HOME/.local/node/bin:$PATH"
+```
+
+## Features
+
+- **Chords**: 20 chord types from any root, with every playable shape found automatically (tap to hear and highlight it)
+- **Scales**: 15 scales, plus the triads and 7th chords that belong to each 7-note scale
+- **Identify**: tap frets on the board and get the chord name (including slash chords)
+- **Song sheet**: collect chord diagrams, reorder them, export as PNG / SVG or print
+- Notes / intervals / no labels, C♯ / D♭ / Do-Re-Mi names, show/hide single intervals
+- Custom tunings, left-handed mode, flipped strings, 12–22 frets
+- Sound (Web Audio, no samples), dark mode, works on phones
+- Settings and song sheet are saved in the browser; the URL is shareable (`#i=guitar&m=chord&r=2&c=m7`)
+
+## Where things live
+
+```
+src/
+  lib/music/theory.js       notes, intervals, CHORDS, SCALES, chord identification   ← pure JS, no UI
+  lib/music/instruments.js  INSTRUMENTS and tunings, note parsing
+  lib/music/voicings.js     chord-shape finder
+  lib/diagram.js            chord-box SVG (used on screen and in exports)
+  lib/export.js             song sheet → SVG / PNG download
+  lib/audio.js              plucked-string synth
+  lib/state.svelte.js       app state, saving, URL hash
+  components/               Settings, Picker, Fretboard, Board, SidePanel, SongSheet
+```
+
+### Adding things
+
+- **A chord or scale**: add one line to `CHORDS` or `SCALES` in `theory.js`, e.g. `{ id: '11', name: 'Eleventh', symbol: '11', formula: ['1', '3', '5', 'b7', '9', '11'] }`
+- **An instrument or tuning**: add an entry to `INSTRUMENTS` in `instruments.js`, strings listed from the thumb side (`'E2 A2 D3 G3 B3 E4'`)
+- **A new feature/panel**: create a component in `components/`, read from `app` (state.svelte.js), and add it to `App.svelte`
