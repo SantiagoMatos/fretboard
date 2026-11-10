@@ -12,21 +12,19 @@ npm run dev        # dev server with live reload → http://localhost:5173
 npm run build      # production files in dist/ — upload that folder anywhere (GitHub Pages, Netlify…)
 ```
 
-Node is installed in `~/.local/node`. To use `npm` from any terminal, add this line to `~/.bashrc`:
-
-```bash
-export PATH="$HOME/.local/node/bin:$PATH"
-```
+Node is installed in `~/.local/node` and linked into `~/.local/bin`, so `npm` works in any terminal.
 
 ## Features
 
 - **Chords**: 20 chord types from any root, with every playable shape found automatically (tap to hear and highlight it)
+- **Shape tools**: switch strings off (e.g. only the top 4), filter by neck position and bass note, and edit a shape by tapping the board — the chord name follows your edits
 - **Scales**: 15 scales, plus the triads and 7th chords that belong to each 7-note scale
 - **Identify**: tap frets on the board and get the chord name (including slash chords)
-- **Song sheet**: collect chord diagrams, reorder them, export as PNG / SVG or print
+- **Song sheet**: slide-in panel to collect chord diagrams, reorder them, export as PNG / SVG or print
 - Notes / intervals / no labels, C♯ / D♭ / Do-Re-Mi names, show/hide single intervals
 - Custom tunings, left-handed mode, flipped strings, 12–22 frets
-- Sound (Web Audio, no samples), dark mode, works on phones
+- Full-width fretboard that stays in view while scrolling; vertical neck on phones
+- Sound (Web Audio, no samples), dark mode
 - Settings and song sheet are saved in the browser; the URL is shareable (`#i=guitar&m=chord&r=2&c=m7`)
 
 ## Where things live
@@ -40,7 +38,14 @@ src/
   lib/export.js             song sheet → SVG / PNG download
   lib/audio.js              plucked-string synth
   lib/state.svelte.js       app state, saving, URL hash
-  components/               Settings, Picker, Fretboard, Board, SidePanel, SongSheet
+  components/
+    TopBar.svelte           instrument, tuning, mode, display settings, sheet button
+    Picker.svelte           root, chord/scale type, interval toggles
+    Board.svelte            fretboard card: markers, play, add, shape editing
+    Fretboard.svelte        the SVG neck (horizontal, or vertical on narrow screens)
+    Shapes.svelte           chord-shape strip with string/position/bass filters
+    SidePanel.svelte        scale chords and identify results
+    SongSheet.svelte        slide-in song sheet and export
 ```
 
 ### Adding things

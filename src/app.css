@@ -7,6 +7,8 @@
   --hover: rgba(47, 111, 222, 0.08);
   --accent: #2f6fde;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  --drawer-w: 380px;
   --fret: #b9b9c0;
   --string: #8c8c94;
   --inlay: #e7e7ec;
@@ -29,6 +31,7 @@
     --hover: rgba(120, 160, 255, 0.12);
     --accent: #5b8ff0;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
     --fret: #55555c;
     --string: #8a8a92;
     --inlay: #2a2a2f;
@@ -83,6 +86,5 @@ select, input {
 /* Printing shows only the song sheet. */
 @media print {
   body { background: #fff; }
-  main > :not(.sheet) { display: none !important; }
-  .sheet { box-shadow: none !important; padding: 0 !important; }
+  main { display: none !important; }
 }

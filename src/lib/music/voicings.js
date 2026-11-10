@@ -26,17 +26,21 @@ const cache = new Map();
 /**
  * Search every 4-fret window for shapes that contain all chord tones (the 5th may be dropped
  * from 4+ note chords), need at most 4 fingers and only mute outer strings. Lower score = easier.
+ * `enabled` (one boolean per string) leaves switched-off strings muted and ignores them otherwise.
  */
-export function findVoicings(tuning, tones, { maxFret = 12, span = 4, limit = 18 } = {}) {
-  const key = `${tuning.join()}|${tones.map((t) => t.pc).join()}|${maxFret}`;
+export function findVoicings(tuning, tones, { maxFret = 12, span = 4, limit = 40, enabled } = {}) {
+  const n = tuning.length;
+  const on = enabled ?? tuning.map(() => true);
+  const key = `${tuning.join()}|${tones.map((t) => t.pc).join()}|${maxFret}|${on.map(Number).join('')}`;
   if (cache.has(key)) return cache.get(key);
 
-  const n = tuning.length;
+  const active = tuning.flatMap((_, i) => (on[i] ? [i] : []));
+  if (active.length < 2) return [];
   const chordPcs = new Set(tones.map((t) => t.pc));
   const rootPc = tones[0].pc;
   const fifth = tones.length >= 4 ? tones.find((t) => t.name === '5')?.pc : undefined;
   const required = [...chordPcs].filter((pc) => pc !== fifth);
-  const minSounding = Math.min(n, 3);
+  const minSounding = Math.min(active.length, 3);
   // On re-entrant instruments the lowest string isn't the bass, so root position matters less.
   // Muting is also unusual there, since every string sits under the strumming hand.
   const reentrant = isReentrant(tuning);
@@ -46,11 +50,12 @@ export function findVoicings(tuning, tones, { maxFret = 12, span = 4, limit = 18
   const frets = new Array(n);
 
   const evaluate = () => {
+    // Muted strings are only allowed at the edges of the strings in use.
     let first = -1, last = -1, sounding = 0;
-    for (let i = 0; i < n; i++) {
-      if (frets[i] < 0) continue;
-      if (first < 0) first = i;
-      last = i;
+    for (let k = 0; k < active.length; k++) {
+      if (frets[active[k]] < 0) continue;
+      if (first < 0) first = k;
+      last = k;
       sounding++;
     }
     if (sounding < minSounding || last - first + 1 !== sounding) return;
@@ -77,7 +82,7 @@ export function findVoicings(tuning, tones, { maxFret = 12, span = 4, limit = 18
     const score =
       minF * 0.5 +
       (maxF - minF) * 0.6 +
-      (n - sounding) * mutePenalty +
+      (active.length - sounding) * mutePenalty +
       (bass % 12 === rootPc ? 0 : rootPenalty) +
       (fifth !== undefined && !pcs.has(fifth) ? 0.3 : 0) +
       fingers * 0.3 +
@@ -87,8 +92,9 @@ export function findVoicings(tuning, tones, { maxFret = 12, span = 4, limit = 18
   };
 
   for (let start = 1; start <= Math.max(1, maxFret - span + 1); start++) {
-    const options = tuning.map((open) => {
+    const options = tuning.map((open, i) => {
       const o = [-1];
+      if (!on[i]) return o;
       if (chordPcs.has(open % 12)) o.push(0);
       for (let f = start; f < start + span && f <= maxFret; f++) if (chordPcs.has((open + f) % 12)) o.push(f);
       return o;

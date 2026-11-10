@@ -1,6 +1,6 @@
 // App state. Components read `app` and `sheet` directly; anything derived updates by itself.
 import { instrumentById, parseTuning } from './music/instruments.js';
-import { buildTones, chordById, chordName, identifyChord, mod12, scaleById } from './music/theory.js';
+import { buildTones, chordById, chordName, identifyChord, mod12, noteName, scaleById } from './music/theory.js';
 import { findVoicings } from './music/voicings.js';
 
 const PREFS_KEY = 'fretboard:prefs';
@@ -54,7 +54,11 @@ function toHash(prefs) {
 class AppState {
   prefs = $state({ ...DEFAULTS, ...load(PREFS_KEY, {}), ...fromHash() });
   hidden = $state([]); // interval names switched off
-  voicingIndex = $state(null); // highlighted chord shape
+  voicingIndex = $state(null); // shape picked from the list (null once edited)
+  shape = $state(null); // frets per string being shown/edited on the board, -1 = muted
+  off = $state([]); // string indexes switched off for the shape finder
+  filters = $state({ position: 'all', bass: 'any' });
+  sheetOpen = $state(false);
   picked = $state([]); // identify mode: fret per string, or null
   recent = $state(load(RECENT_KEY, []));
 
@@ -65,8 +69,19 @@ class AppState {
   );
   def = $derived(this.prefs.mode === 'scale' ? scaleById(this.prefs.scaleId) : chordById(this.prefs.chordId));
   tones = $derived(buildTones(this.prefs.root, this.def));
-  voicings = $derived(this.prefs.mode === 'chord' ? findVoicings(this.tuning, this.tones, { maxFret: this.prefs.frets }) : []);
-  voicing = $derived(this.voicingIndex == null ? null : this.voicings[this.voicingIndex] ?? null);
+  voicings = $derived(
+    this.prefs.mode === 'chord'
+      ? findVoicings(this.tuning, this.tones, { maxFret: this.prefs.frets, enabled: this.tuning.map((_, i) => !this.off.includes(i)) })
+      : [],
+  );
+
+  shapeMidis = $derived(this.shape ? this.shape.flatMap((f, s) => (f < 0 ? [] : [this.tuning[s] + f])) : []);
+  /** What the (possibly edited) shape is: the selected chord if it still fits, else the best guess. */
+  shapeMatch = $derived.by(() => {
+    if (this.shapeMidis.length < 2) return null;
+    const ms = identifyChord(this.shapeMidis, mod12(Math.min(...this.shapeMidis)));
+    return ms.find((m) => m.root === this.prefs.root && m.chord.id === this.prefs.chordId) ?? ms[0] ?? null;
+  });
 
   pickedMidis = $derived(this.picked.flatMap((f, s) => (f == null ? [] : [this.tuning[s] + f])));
   matches = $derived.by(() => {
@@ -87,9 +102,15 @@ class AppState {
     const p = this.prefs;
     const changed = (...keys) => keys.some((k) => k in patch && patch[k] !== p[k]);
     if (changed('instrument') && !('tuningIndex' in patch)) patch.tuningIndex = 0;
-    if (changed('instrument', 'tuningIndex', 'customTuning')) this.picked = [];
-    if (changed('instrument', 'tuningIndex', 'customTuning', 'root', 'chordId', 'mode', 'frets')) this.voicingIndex = null;
-    if (changed('chordId', 'scaleId', 'mode')) this.hidden = [];
+    if (changed('instrument', 'tuningIndex', 'customTuning')) {
+      this.picked = [];
+      this.off = [];
+    }
+    if (changed('instrument', 'tuningIndex', 'customTuning', 'root', 'chordId', 'mode', 'frets')) this.clearShape();
+    if (changed('chordId', 'scaleId', 'mode')) {
+      this.hidden = [];
+      this.filters.bass = 'any'; // the old bass interval may not exist in the new chord
+    }
     const chordChanged = changed('root', 'chordId', 'mode');
     Object.assign(p, patch);
     if (chordChanged && p.mode === 'chord') {
@@ -104,6 +125,32 @@ class AppState {
   remember(root, chordId) {
     const rest = this.recent.filter((r) => !(r.root === root && r.chordId === chordId));
     this.recent = [{ root, chordId }, ...rest].slice(0, 12);
+  }
+
+  clearShape() {
+    this.voicingIndex = null;
+    this.shape = null;
+  }
+
+  selectVoicing(i) {
+    if (this.voicingIndex === i) return this.clearShape();
+    this.voicingIndex = i;
+    this.shape = [...this.voicings[i].frets];
+  }
+
+  /** Tap on the board while a shape is shown: move that string there, or mute it if tapped again. */
+  editShape(s, f) {
+    const next = [...this.shape];
+    next[s] = next[s] === f ? -1 : f;
+    this.shape = next;
+    const k = next.join();
+    const i = this.voicings.findIndex((v) => v.frets.join() === k);
+    this.voicingIndex = i < 0 ? null : i;
+  }
+
+  toggleString(s) {
+    this.off = this.off.includes(s) ? this.off.filter((i) => i !== s) : [...this.off, s];
+    this.clearShape();
   }
 
   toggleInterval(name) {
@@ -121,15 +168,19 @@ export const app = new AppState();
 
 export const sheet = $state(load(SHEET_KEY, { title: 'My song', cols: 4, labels: 'none', items: [] }));
 
-export function addToSheet(frets, root = app.prefs.root, chordId = app.prefs.chordId) {
-  const { instrument } = app.prefs;
-  sheet.items.push({ id: crypto.randomUUID(), root, chordId, frets: [...frets], tuning: [...app.tuning], instrument });
+/** `match` comes from identifyChord; without it the selected chord is used. */
+export function addToSheet(frets, match = null) {
+  const root = match?.root ?? app.prefs.root;
+  const chordId = match?.chord.id ?? app.prefs.chordId;
+  const bass = match?.bassPc != null && match.bassPc !== root ? match.bassPc : null;
+  sheet.items.push({ id: crypto.randomUUID(), root, chordId, bass, frets: [...frets], tuning: [...app.tuning], instrument: app.prefs.instrument });
 }
 
 /** Everything a diagram needs for a saved sheet item. */
 export function describeItem(item, notation = app.prefs.notation) {
   const chord = chordById(item.chordId);
-  return { name: chordName(item.root, chord, notation), frets: item.frets, tuning: item.tuning, tones: buildTones(item.root, chord) };
+  const bass = item.bass != null ? '/' + noteName(item.bass, notation) : '';
+  return { name: chordName(item.root, chord, notation) + bass, frets: item.frets, tuning: item.tuning, tones: buildTones(item.root, chord) };
 }
 
 $effect.root(() => {
