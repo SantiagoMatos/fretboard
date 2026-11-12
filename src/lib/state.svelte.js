@@ -1,8 +1,9 @@
 // App state. Components read `app` and `sheet` directly; anything derived updates by itself.
 import { untrack } from 'svelte';
-import { instrumentById, parseTuning } from './music/instruments.js';
+import { instrumentById, isReentrant, parseTuning } from './music/instruments.js';
 import { buildTones, chordById, chordName, identifyChord, mod12, noteName, scaleById } from './music/theory.js';
 import { findVoicings } from './music/voicings.js';
+import { setVoice } from './audio.js';
 
 const PREFS_KEY = 'fretboard:prefs';
 const SHEET_KEY = 'fretboard:sheet'; // old single sheet, migrated into the song library
@@ -177,7 +178,10 @@ export const app = new AppState();
 // `songs` is the saved library. `sheet` is the open song: edits to it are copied
 // into the library automatically, so there is no Save button to forget.
 
-const blankSong = () => ({ id: crypto.randomUUID(), title: 'My song', cols: 4, labels: 'none', items: [], updated: Date.now() });
+// Settings every song has. Songs saved before a setting existed get its default when opened.
+const SONG_DEFAULTS = { title: 'My song', cols: 4, labels: 'none', capo: 0, bpm: 90, beats: 4, pattern: 'downs', items: [] };
+const blankSong = () => ({ ...SONG_DEFAULTS, items: [], id: crypto.randomUUID(), updated: Date.now() });
+const withDefaults = (song) => ({ ...SONG_DEFAULTS, ...song });
 
 function initialSongs() {
   const stored = load(SONGS_KEY, null);
@@ -188,14 +192,14 @@ function initialSongs() {
 
 export const songs = $state(initialSongs());
 const startId = load(CURRENT_KEY, null);
-export const sheet = $state(structuredClone($state.snapshot(songs.find((s) => s.id === startId) ?? songs[0] ?? blankSong())));
+export const sheet = $state(withDefaults(structuredClone($state.snapshot(songs.find((s) => s.id === startId) ?? songs[0] ?? blankSong()))));
 
 /** Songs worth keeping: anything with chords or a title of its own. */
 const worthSaving = (s) => s.items.length > 0 || (s.title.trim() && s.title !== 'My song');
 
 export function openSong(id) {
   const song = songs.find((s) => s.id === id);
-  if (song) Object.assign(sheet, structuredClone($state.snapshot(song)));
+  if (song) Object.assign(sheet, withDefaults(structuredClone($state.snapshot(song))));
 }
 
 export function newSong() {
@@ -262,6 +266,10 @@ export function importSongs(text) {
     title: typeof s?.title === 'string' ? s.title.slice(0, 200) : 'Imported song',
     cols: [2, 3, 4, 5, 6, 8].includes(s?.cols) ? s.cols : 4,
     labels: ['none', 'notes', 'intervals'].includes(s?.labels) ? s.labels : 'none',
+    capo: isInt(s?.capo) && s.capo >= 0 && s.capo <= 11 ? s.capo : 0,
+    bpm: isInt(s?.bpm) && s.bpm >= 30 && s.bpm <= 300 ? s.bpm : 90,
+    beats: [1, 2, 3, 4, 6, 8].includes(s?.beats) ? s.beats : 4,
+    pattern: typeof s?.pattern === 'string' ? s.pattern : 'downs',
     items: (Array.isArray(s?.items) ? s.items : []).map(cleanItem).filter(Boolean),
   }));
   if (!added.length) throw new Error('No songs found in this file.');
@@ -275,14 +283,86 @@ export function addToSheet(frets, match = null) {
   const root = match?.root ?? app.prefs.root;
   const chordId = match?.chord.id ?? app.prefs.chordId;
   const bass = match?.bassPc != null && match.bassPc !== root ? match.bassPc : null;
-  sheet.items.push({ id: crypto.randomUUID(), root, chordId, bass, frets: [...frets], tuning: [...app.tuning], instrument: app.prefs.instrument });
+  const item = { id: crypto.randomUUID(), root, chordId, bass, frets: [...frets], tuning: [...app.tuning], instrument: app.prefs.instrument };
+  // With a capo the board's shape would sound higher, so find the same chord again above the capo.
+  if (sheet.capo) item.frets = refit(item, root, bass, shapePosition(frets) - sheet.capo, sheet.capo) ?? item.frets;
+  sheet.items.push(item);
 }
 
-/** Everything a diagram needs for a saved sheet item. */
-export function describeItem(item, notation = app.prefs.notation) {
+/** Everything a diagram needs for a saved sheet item. Frets are counted from the capo. */
+export function describeItem(item, notation = app.prefs.notation, capo = sheet.capo) {
   const chord = chordById(item.chordId);
-  const bass = item.bass != null ? '/' + noteName(item.bass, notation) : '';
-  return { name: chordName(item.root, chord, notation) + bass, frets: item.frets, tuning: item.tuning, tones: buildTones(item.root, chord) };
+  const slash = (pc) => (pc != null ? '/' + noteName(pc, notation) : '');
+  const name = chordName(item.root, chord, notation) + slash(item.bass);
+  // With a capo, also name the shape the hand makes (e.g. B♭ played as an A shape on capo 1).
+  const shape = capo ? chordName(mod12(item.root - capo), chord, notation) + slash(item.bass == null ? null : mod12(item.bass - capo)) : null;
+  return { name, shape, frets: item.frets, tuning: item.tuning.map((m) => m + capo), tones: buildTones(item.root, chord) };
+}
+
+/** Sounding notes of an item, in string order. */
+export const itemMidis = (item, capo = sheet.capo) => item.frets.flatMap((f, s) => (f < 0 ? [] : [item.tuning[s] + capo + f]));
+
+// ---- Transpose and capo ------------------------------------------------------
+
+/** Average fret of the sounding strings: roughly where on the neck the hand sits. */
+function shapePosition(frets) {
+  const used = frets.filter((f) => f >= 0);
+  return used.length ? used.reduce((a, b) => a + b, 0) / used.length : 0;
+}
+
+/**
+ * Finds a shape for `root` (with optional slash `bass`) near fret `target`, counted from `capo`.
+ * Prefers easy shapes, the same strings as before, and the right bass note. Returns frets or null.
+ */
+function refit(item, root, bass, target, capo) {
+  const chord = chordById(item.chordId);
+  const tuning = item.tuning.map((m) => m + capo);
+  const options = findVoicings(tuning, buildTones(root, chord), { maxFret: Math.max(5, 15 - capo) });
+  if (!options.length) return null;
+  const goal = Math.min(Math.max(target, 0), 9);
+  const sameStrings = (f) => f.every((x, s) => (x < 0) === (item.frets[s] < 0));
+  const lowestPc = (f) => {
+    const notes = f.flatMap((x, s) => (x < 0 ? [] : [tuning[s] + x]));
+    return mod12(Math.min(...notes));
+  };
+  // The lowest note should be the slash bass if there is one, otherwise the root (except on
+  // re-entrant tunings like timple and ukulele, where the lowest note isn't on the bass side anyway).
+  const wantBass = bass ?? (isReentrant(tuning) ? null : root);
+  let best = null;
+  const easiest = options[0].score;
+  options.forEach((v) => {
+    const score =
+      (v.score - easiest) +
+      Math.abs(shapePosition(v.frets) - goal) * 0.2 +
+      (sameStrings(v.frets) ? 0 : 0.3) +
+      (wantBass != null && lowestPc(v.frets) !== wantBass ? 3 : 0);
+    if (!best || score < best.score) best = { score, frets: v.frets };
+  });
+  return [...best.frets];
+}
+
+/** Moves every chord in the open song up (+) or down (−) by semitones. */
+export function transposeSong(semis) {
+  for (const item of sheet.items) {
+    const root = mod12(item.root + semis);
+    const bass = item.bass == null ? null : mod12(item.bass + semis);
+    const frets = refit(item, root, bass, shapePosition(item.frets) + semis, sheet.capo);
+    if (!frets) continue; // no shape for it on this tuning: leave the chord as it was
+    Object.assign(item, { root, bass, frets });
+  }
+}
+
+/** Puts the capo on another fret. Chords keep sounding the same; shapes change to match. */
+export function setCapo(capo) {
+  const delta = capo - sheet.capo;
+  if (!delta) return;
+  for (const item of sheet.items) {
+    // Moving the capo up lets the hand move down; taking it off shouldn't push shapes up the neck.
+    const pos = shapePosition(item.frets);
+    const frets = refit(item, item.root, item.bass, Math.min(pos, pos - delta), capo);
+    if (frets) item.frets = frets;
+  }
+  sheet.capo = capo;
 }
 
 $effect.root(() => {
@@ -306,6 +386,7 @@ $effect.root(() => {
   });
   $effect(() => save(SONGS_KEY, $state.snapshot(songs)));
   $effect(() => save(RECENT_KEY, $state.snapshot(app.recent)));
+  $effect(() => setVoice(app.prefs.instrument)); // the board plays with the chosen instrument's sound
 });
 
 window.addEventListener('hashchange', () => app.set(fromHash()));

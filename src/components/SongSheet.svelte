@@ -1,8 +1,9 @@
 <script>
-  import { app, sheet, songs, describeItem, openSong, newSong, duplicateSong, deleteSong, songsFile, importSongs } from '../lib/state.svelte.js';
+  import { untrack } from 'svelte';
+  import { app, sheet, songs, describeItem, itemMidis, openSong, newSong, duplicateSong, deleteSong, songsFile, importSongs, setCapo, transposeSong } from '../lib/state.svelte.js';
   import { chordDiagram, PRINT_PALETTE, svgDocument } from '../lib/diagram.js';
   import { downloadJson, downloadPng, downloadSvg, sheetSvg, slug } from '../lib/export.js';
-  import { play } from '../lib/audio.js';
+  import { play, playSong, PATTERNS } from '../lib/audio.js';
 
   // Slide-in panel. Diagrams use the print palette so what you see is what gets exported.
   let diagrams = $derived(
@@ -18,7 +19,98 @@
     [sheet.items[i], sheet.items[j]] = [sheet.items[j], sheet.items[i]];
   }
   const remove = (i) => sheet.items.splice(i, 1);
-  const hear = (item) => play(item.frets.flatMap((f, s) => (f < 0 ? [] : [item.tuning[s] + f])));
+  const hear = (item) => play(itemMidis(item), { voice: item.instrument });
+
+  // ---- Song player ----
+  let stopSong = $state(null); // set while playing
+  let playing = $state(-1); // index of the chord sounding now
+  let loop = $state(false);
+  let gridEl;
+
+  function startSong() {
+    sheet.bpm = Math.min(300, Math.max(30, Math.round(sheet.bpm) || 90));
+    // One MIDI note per string (null = muted), so each string rings until it's struck again.
+    const perString = (item) => item.frets.map((f, s) => (f < 0 ? null : item.tuning[s] + sheet.capo + f));
+    stopSong = playSong(() => sheet.items.map(perString), {
+      voice: sheet.items[0]?.instrument,
+      bpm: sheet.bpm,
+      beats: sheet.beats,
+      pattern: sheet.pattern,
+      loop,
+      onChord: (i) => {
+        playing = i;
+        gridEl?.children[i]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      },
+      onEnd: () => {
+        stopSong = null;
+        playing = -1;
+      },
+    });
+  }
+  function stopPlaying() {
+    stopSong?.();
+    stopSong = null;
+    playing = -1;
+  }
+  const togglePlay = () => (stopSong ? stopPlaying() : startSong());
+
+  // Changing tempo, beats, pattern or loop while playing restarts with the new settings.
+  $effect(() => {
+    void [sheet.bpm, sheet.beats, sheet.pattern, loop];
+    untrack(() => {
+      if (stopSong) {
+        stopPlaying();
+        startSong();
+      }
+    });
+  });
+  // Opening another song stops the music.
+  $effect(() => {
+    void sheet.id;
+    untrack(stopPlaying);
+  });
+
+  // ---- Resizing: drag the left edge. The width is remembered in this browser. ----
+  const WIDTH_KEY = 'fretboard:sheet-width';
+  const DEFAULT_W = 380;
+  const MIN_W = 300;
+  const maxW = () => Math.max(MIN_W, Math.min(1000, window.innerWidth - 320)); // leave room for the board
+  const clampW = (w) => Math.round(Math.min(maxW(), Math.max(MIN_W, w)));
+  let width = $state(DEFAULT_W);
+  try {
+    width = clampW(Number(localStorage.getItem(WIDTH_KEY)) || DEFAULT_W);
+  } catch {}
+  let resizing = $state(false);
+
+  $effect(() => {
+    document.documentElement.style.setProperty('--drawer-w', width + 'px');
+    try {
+      localStorage.setItem(WIDTH_KEY, String(width));
+    } catch {}
+  });
+
+  function startResize(e) {
+    e.preventDefault();
+    resizing = true;
+    document.body.classList.add('resizing');
+    const move = (ev) => (width = clampW(window.innerWidth - ev.clientX));
+    const up = () => {
+      resizing = false;
+      document.body.classList.remove('resizing');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+  function resizeKey(e) {
+    const step = e.shiftKey ? 80 : 20;
+    if (e.key === 'ArrowLeft') width = clampW(width + step);
+    else if (e.key === 'ArrowRight') width = clampW(width - step);
+    else if (e.key === 'Home') width = clampW(DEFAULT_W);
+    else return;
+    e.preventDefault();
+  }
 
   // 'sheet' shows the open song, 'songs' the saved library.
   let view = $state('sheet');
@@ -63,9 +155,23 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (app.sheetOpen = false)} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (app.sheetOpen = false)} onresize={() => (width = clampW(width))} />
 
-<aside class="drawer sheet" class:open={app.sheetOpen} aria-label="Song sheet" aria-hidden={!app.sheetOpen} inert={!app.sheetOpen}>
+<aside class="drawer sheet" class:open={app.sheetOpen} class:resizing aria-label="Song sheet" aria-hidden={!app.sheetOpen} inert={!app.sheetOpen}>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div
+    class="grip"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize song sheet"
+    aria-valuenow={width}
+    aria-valuemin={MIN_W}
+    tabindex="0"
+    title="Drag to resize · double-click to reset"
+    onpointerdown={startResize}
+    ondblclick={() => (width = clampW(DEFAULT_W))}
+    onkeydown={resizeKey}
+  ></div>
   <div class="head">
     {#if view === 'sheet'}
       <button class="songs-btn" onclick={() => (view = 'songs')} aria-label="All songs">☰ Songs</button>
@@ -108,7 +214,19 @@
     <p class="hint foot-hint">Songs are kept in this browser. Use “Back up all” or “Save file” to move them to another device or share them.</p>
   {:else}
     <div class="options">
-      <label>Columns in export
+      <label>Capo
+        <select value={sheet.capo} onchange={(e) => setCapo(Number(e.currentTarget.value))}>
+          {#each { length: 10 } as _, c}<option value={c}>{c ? `Fret ${c}` : 'None'}</option>{/each}
+        </select>
+      </label>
+      <div class="transpose">
+        <span>Transpose</span>
+        <div>
+          <button disabled={!sheet.items.length} onclick={() => transposeSong(-1)} title="All chords down a semitone">−1</button>
+          <button disabled={!sheet.items.length} onclick={() => transposeSong(1)} title="All chords up a semitone">+1</button>
+        </div>
+      </div>
+      <label>Columns
         <select bind:value={sheet.cols}>{#each [2, 3, 4, 5, 6, 8] as c}<option value={c}>{c}</option>{/each}</select>
       </label>
       <label>Dot labels
@@ -118,12 +236,23 @@
       </label>
     </div>
 
+    <div class="player">
+      <button class="primary play" disabled={!sheet.items.length} onclick={togglePlay}>{stopSong ? '■ Stop' : '▶ Play song'}</button>
+      <label>BPM <input type="number" min="30" max="300" step="1" bind:value={sheet.bpm} /></label>
+      <label>Beats <select bind:value={sheet.beats} title="Beats per chord">{#each [1, 2, 3, 4, 6, 8] as b}<option value={b}>{b}</option>{/each}</select></label>
+      <select class="pattern" bind:value={sheet.pattern} aria-label="Strum pattern">
+        {#each PATTERNS as p}<option value={p.id}>{p.label}</option>{/each}
+      </select>
+      <label class="loop"><input type="checkbox" bind:checked={loop} /> Loop</label>
+    </div>
+
     <div class="body">
       {#if sheet.items.length}
         {#if sheet.title}<h2 class="print-title">{sheet.title}</h2>{/if}
-        <div class="grid" style="--print-cols: {sheet.cols}">
+        {#if sheet.capo}<p class="print-capo">Capo {sheet.capo}</p>{/if}
+        <div class="grid" style="--print-cols: {sheet.cols}" bind:this={gridEl}>
           {#each sheet.items as item, i (item.id)}
-            <figure>
+            <figure class:playing={playing === i}>
               <button class="diagram" onclick={() => hear(item)} aria-label="Play chord">{@html diagrams[i]}</button>
               <figcaption>
                 <button onclick={() => move(i, -1)} disabled={i === 0} aria-label="Move earlier">←</button>
@@ -160,8 +289,16 @@
     transform: translateX(105%); transition: transform 0.25s ease;
   }
   .drawer.open { transform: none; }
+  /* Drag handle along the left edge. */
+  .grip { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: ew-resize; z-index: 1; touch-action: none; }
+  .grip::after { content: ''; position: absolute; left: 3px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: var(--border); transition: background 0.15s; }
+  .grip:hover::after, .grip:focus-visible::after, .drawer.resizing .grip::after { background: var(--accent); }
+  .grip:focus-visible { outline: none; }
+  :global(body.resizing) { cursor: ew-resize; user-select: none; }
+  :global(body.resizing main) { transition: none; }
+  @media (max-width: 700px) { .grip { display: none; } }
   .head { display: flex; gap: 8px; }
-  .title { flex: 1; font-size: 17px; font-weight: 700; }
+  .title { flex: 1; min-width: 0; font-size: 17px; font-weight: 700; }
   .close { padding: 4px 11px; }
   .songs-btn { white-space: nowrap; padding: 4px 10px; }
   .list-title { flex: 1; margin: 0; font-size: 17px; align-self: center; }
@@ -175,7 +312,7 @@
   .icon { padding: 4px 9px; }
   .options { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: end; }
   .options label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); font-weight: 600; }
-  .body { flex: 1; overflow-y: auto; min-height: 0; }
+  .body { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 4px; margin: -4px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
   figure { margin: 0; display: grid; gap: 4px; justify-items: center; }
   .diagram { border: 0; padding: 0; background: none; line-height: 0; border-radius: 8px; box-shadow: var(--shadow); }
@@ -183,11 +320,23 @@
   figcaption button { padding: 1px 8px; font-size: 12px; }
   .foot { display: flex; gap: 6px; flex-wrap: wrap; }
   .spacer { flex: 1; }
-  .print-title { display: none; }
+  .print-title, .print-capo { display: none; }
+  .transpose { display: grid; gap: 3px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .transpose div { display: flex; gap: 4px; }
+  .transpose button { padding: 5px 10px; font-weight: 600; color: var(--fg); }
+  .player { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 10px; border-radius: 10px; background: var(--bg); }
+  .player label { display: flex; gap: 5px; align-items: center; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .player input[type='number'] { width: 62px; }
+  .player .pattern { flex: 1; min-width: 150px; }
+  .play { min-width: 110px; font-weight: 600; }
+  .diagram { transition: box-shadow 0.1s; }
+  figure.playing .diagram { box-shadow: 0 0 0 3px var(--accent); }
 
   @media print {
     .drawer { position: static; transform: none; width: auto; box-shadow: none; border: 0; padding: 0; display: block; }
-    .head, .options, .foot, figcaption, .notice, .foot-hint { display: none; }
+    .grip, .head, .options, .foot, figcaption, .notice, .foot-hint, .player { display: none; }
+    figure.playing .diagram { box-shadow: none; }
+    .print-capo { display: block; text-align: center; color: #555; margin: -8px 0 12px; font-weight: 600; }
     .body { overflow: visible; }
     .print-title { display: block; text-align: center; color: #000; }
     .grid { grid-template-columns: repeat(var(--print-cols), max-content); justify-content: center; }

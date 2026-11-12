@@ -19,9 +19,10 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
  * @param {number[]} o.tuning MIDI notes per string
  * @param {{name:string,pc:number,semi:number}[]} o.tones chord tones (for labels and root colour)
  * @param {'none'|'notes'|'intervals'} [o.labels]
+ * @param {string} [o.shape] with a capo: the chord shape the hand makes, shown under the name
  * @returns {{width:number,height:number,body:string}}
  */
-export function chordDiagram({ name, frets, tuning, tones, labels = 'none', notation = 'sharp', palette = PRINT_PALETTE }) {
+export function chordDiagram({ name, shape = null, frets, tuning, tones, labels = 'none', notation = 'sharp', palette = PRINT_PALETTE }) {
   const n = frets.length;
   const fretted = frets.filter((f) => f > 0);
   const maxF = fretted.length ? Math.max(...fretted) : 0;
@@ -31,7 +32,7 @@ export function chordDiagram({ name, frets, tuning, tones, labels = 'none', nota
   const gridW = (n - 1) * SS;
   const width = Math.max(gridW + 52, 112);
   const left = (width - gridW) / 2;
-  const top = 50;
+  const top = shape ? 62 : 50;
   const height = top + rows * FS + 14;
   const x = (s) => left + s * SS;
   const y = (row) => top + row * FS;
@@ -41,6 +42,7 @@ export function chordDiagram({ name, frets, tuning, tones, labels = 'none', nota
 
   out.push(`<rect width="${width}" height="${height}" rx="8" style="fill:${p.bg}"/>`);
   out.push(`<text x="${width / 2}" y="22" text-anchor="middle" font-family="${FONT}" font-size="17" font-weight="700" style="fill:${p.fg}">${esc(name)}</text>`);
+  if (shape) out.push(`<text x="${width / 2}" y="37" text-anchor="middle" font-family="${FONT}" font-size="10.5" style="fill:${p.muted}">${esc(shape)} shape</text>`);
 
   for (let r = 0; r <= rows; r++) {
     const thick = r === 0 && base === 1;

@@ -20,13 +20,15 @@ Node is installed in `~/.local/node` and linked into `~/.local/bin`, so `npm` wo
 - **Shape tools**: switch strings off (e.g. only the top 4), filter by neck position, and edit a shape by tapping the board — the chord name follows your edits
 - **Scales**: 15 scales, plus the triads and 7th chords that belong to each 7-note scale
 - **Identify**: tap frets on the board and get the chord name (including slash chords)
-- **Song sheet**: slide-in panel to collect chord diagrams, reorder them, export as PNG / SVG or print
+- **Song sheet**: slide-in panel (drag its left edge to resize) to collect chord diagrams, reorder them, export as PNG / SVG or print
+- **Play the song**: plays the sheet's chords in order with a tempo, beats per chord and strum pattern (one strum, downs, down-up, folk, arpeggio), optionally looped; the chord playing is highlighted
+- **Transpose and capo**: move a whole song up or down a semitone, or put a capo on — names stay in concert pitch, shapes are re-found nearby, and diagrams show the shape you play (“F shape”)
 - **Songs library**: every song saves automatically in the browser; open, duplicate or delete them from “☰ Songs”
 - **Song files**: “Save file” downloads one song as `.json`, “Back up all” downloads every song; “Open file…” loads them back (other devices, sharing)
 - Notes / intervals / no labels, D♭ (default) / C♯ / Do-Re-Mi names, show/hide single intervals
 - Custom tunings, left-handed mode, flipped strings, 12–22 frets
 - Full-width fretboard that stays in view while scrolling; vertical neck on phones
-- Sound (Web Audio, no samples), dark mode
+- Sound: physically-modelled plucked strings (Karplus-Strong, no samples) with a voice per instrument — doubled courses on mandolin/bandurria, long sustain on bass — plus body resonance and room reverb; dark mode
 - Settings are saved in the browser; the URL is shareable (`#i=guitar&m=chord&r=2&c=m7`)
 
 ## Where things live
@@ -38,8 +40,8 @@ src/
   lib/music/voicings.js     chord-shape finder
   lib/diagram.js            chord-box SVG (used on screen and in exports)
   lib/export.js             song sheet → SVG / PNG download
-  lib/audio.js              plucked-string synth
-  lib/state.svelte.js       app state, songs library, song files, saving, URL hash
+  lib/audio.js              string synth and instrument voices, song player and strum patterns
+  lib/state.svelte.js       app state, songs library, song files, transpose/capo, saving, URL hash
   components/
     TopBar.svelte           instrument, tuning, mode, display settings, sheet button
     Picker.svelte           piano-style root picker, chord/scale columns by family (tabs on phones), interval toggles

@@ -9,7 +9,8 @@ export function sheetSvg(sheet, describe, notation) {
   const cols = Math.max(1, Math.min(sheet.cols, boxes.length || 1));
   const cellW = Math.max(112, ...boxes.map((b) => b.width));
   const cellH = Math.max(100, ...boxes.map((b) => b.height));
-  const titleH = sheet.title ? 48 : 0;
+  const capoLine = sheet.capo ? `Capo ${sheet.capo}` : '';
+  const titleH = (sheet.title ? 48 : 0) + (capoLine ? 22 : 0);
   const rows = Math.ceil(boxes.length / cols) || 1;
   const width = PAD * 2 + cols * cellW + (cols - 1) * GAP;
   const height = PAD * 2 + titleH + rows * cellH + (rows - 1) * GAP;
@@ -17,6 +18,10 @@ export function sheetSvg(sheet, describe, notation) {
   const parts = [`<rect width="${width}" height="${height}" fill="#ffffff"/>`];
   if (sheet.title) {
     parts.push(`<text x="${width / 2}" y="${PAD + 26}" text-anchor="middle" font-family="${FONT}" font-size="24" font-weight="700" fill="#1d1d1f">${escapeXml(sheet.title)}</text>`);
+  }
+  if (capoLine) {
+    const y = PAD + (sheet.title ? 48 : 0) + 8;
+    parts.push(`<text x="${width / 2}" y="${y}" text-anchor="middle" font-family="${FONT}" font-size="15" font-weight="600" fill="#6e6e73">${capoLine}</text>`);
   }
   boxes.forEach((b, i) => {
     const cx = PAD + (i % cols) * (cellW + GAP) + (cellW - b.width) / 2;
